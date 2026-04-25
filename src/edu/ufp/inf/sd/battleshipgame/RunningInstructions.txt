@@ -1,0 +1,9 @@
+Runnning a Game:
+1. Run Server, insert 4 digits port (e.g. 1234) and click Start button.
+2. Run ClientUI for 1st player and select Multi-Player game mode.
+3. Run ClientUI for 2nd player and select Multi-Player game mode.
+4. Use ClientUI of 1st player, to insert 5 battleships on bottom matrix and finalize by clicking Ready button.
+5. Use ClientUI of 2nd player, to insert 5 battleships on bottom matrix and finalize by clicking Ready button.
+6. In turns, use ClientUI of each player, to select a cell on upper matrix and click Fire button.
+7. Proceed in turns until the end of the game, when all battleships of one of the players is sunk.
+EOF

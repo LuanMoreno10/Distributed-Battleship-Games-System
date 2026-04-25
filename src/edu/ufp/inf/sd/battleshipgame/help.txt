@@ -1,0 +1,20 @@
+Starting a Game:
+    Run MainUI class, enter a 4 digit Port Number between 1024 and 9999
+    and click Create a Server button. It will also start two ClientUI clients.
+
+Single Player Game:
+    Choose the single player button to play against an AI
+
+Rules:
+    Start by placing your ships on your grid (bottom grid - you
+    may also choose to rotate your ships by clicking the
+    rotate button).
+
+    Once you have placed all five ships click ready
+    (wait for opponent if playing multi-player).
+    Once the game begins take turns guessing the location
+    of the enemy ships using the top grid. Once all enemy
+    ships have been sunk or you have lost all of your ships
+    the game is over. The victor is the one with surviving
+    ships.
+EOF
