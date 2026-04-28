@@ -20,25 +20,31 @@ public class BattleshipFactoryImpl extends UnicastRemoteObject implements Battle
 
     @Override
     public LobbySession register(String username, String password) throws RemoteException {
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            throw new RemoteException("Username e password não podem estar vazios.");
+        }
         if (users.containsKey(username)) {
-            System.out.println("User " + username + " already exists.");
-            return null; // ou throw new RemoteException("User exists")
+            throw new RemoteException("Utilizador '" + username + "' já existe.");
         }
         users.put(username, password);
-        System.out.println("Registered new user: " + username);
+        System.out.println("[Servidor] Novo utilizador registado: " + username);
         return login(username, password);
     }
 
     @Override
     public LobbySession login(String username, String password) throws RemoteException {
-        if (users.containsKey(username) && users.get(username).equals(password)) {
-            LobbySession session = new LobbySessionImpl(username, this);
-            activeSessions.put(username, session);
-            System.out.println("User " + username + " logged in successfully.");
-            return session;
+        if (!users.containsKey(username) || !users.get(username).equals(password)) {
+            throw new RemoteException("Credenciais inválidas para o utilizador '" + username + "'.");
         }
-        System.out.println("Login failed for user: " + username);
-        return null; // ou throw new RemoteException("Invalid credentials")
+        LobbySession session = new LobbySessionImpl(username, this);
+        activeSessions.put(username, session);
+        System.out.println("[Servidor] Utilizador '" + username + "' autenticado com sucesso.");
+        return session;
+    }
+
+    public void removeSession(String username) {
+        activeSessions.remove(username);
+        System.out.println("[Servidor] Sessão de '" + username + "' terminada.");
     }
 
     public Map<String, BattleshipGameSubject> getActiveGames() {
