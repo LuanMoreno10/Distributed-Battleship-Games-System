@@ -55,6 +55,11 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
         }
     }
 
+    @Override
+    public int getPlayerCount() throws RemoteException {
+        return observers.size();
+    }
+
     public String getGameId() {
         return gameId;
     }

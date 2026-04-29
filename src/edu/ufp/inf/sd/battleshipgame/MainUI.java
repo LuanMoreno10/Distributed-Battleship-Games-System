@@ -161,7 +161,7 @@ public class MainUI extends JFrame implements ActionListener {
             if (validPort) {
                 Thread t=new Thread() {
                     public void run() {
-                        Server s=new Server(Integer.parseInt(txtPortNum.getText()));
+                        new SocketServer(Integer.parseInt(txtPortNum.getText()));
                     }
                 };
 

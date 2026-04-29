@@ -11,4 +11,6 @@ public interface BattleshipGameSubject extends Remote {
     void setState(Object state) throws RemoteException;
 
     Object getState() throws RemoteException;
+
+    int getPlayerCount() throws RemoteException;
 }

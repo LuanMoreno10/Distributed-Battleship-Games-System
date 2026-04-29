@@ -2,6 +2,7 @@ package edu.ufp.inf.sd.battleshipgame.Client;
 
 import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactory;
 import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameSubject;
+import edu.ufp.inf.sd.battleshipgame.rmi.GameInfo;
 import edu.ufp.inf.sd.battleshipgame.rmi.LobbySession;
 
 import java.rmi.RemoteException;
@@ -116,12 +117,12 @@ public class ClientApp {
     }
 
     private static void listarJogos(LobbySession session) throws RemoteException {
-        List<String> jogos = session.listGames();
+        List<GameInfo> jogos = session.listGames();
         if (jogos.isEmpty()) {
             System.out.println("Não há jogos disponíveis.\n");
         } else {
             System.out.println("Jogos disponíveis:");
-            jogos.forEach(id -> System.out.println("  - " + id));
+            jogos.forEach(info -> System.out.println("  - " + info));
             System.out.println();
         }
     }

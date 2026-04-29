@@ -7,7 +7,7 @@ import java.util.List;
 public interface LobbySession extends Remote {
     String getUsername() throws RemoteException;
 
-    List<String> listGames() throws RemoteException;
+    List<GameInfo> listGames() throws RemoteException;
 
     BattleshipGameSubject createGame() throws RemoteException;
 
