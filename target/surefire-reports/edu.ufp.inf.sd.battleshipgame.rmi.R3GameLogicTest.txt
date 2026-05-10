@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: edu.ufp.inf.sd.battleshipgame.rmi.R3GameLogicTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.101 s -- in edu.ufp.inf.sd.battleshipgame.rmi.R3GameLogicTest
