@@ -1,63 +1,300 @@
 package edu.ufp.inf.sd.battleshipgame.rmi;
 
+import edu.ufp.inf.sd.battleshipgame.pubsub.BattleshipGamePublisher;
+
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements BattleshipGameSubject {
     private final String gameId;
-    private final List<BattleshipGameObserver> observers;
-    private Object gameState; // Temporário, depois podemos tipar
+    private final Map<String, BattleshipGameObserver> observersByUser;
+
+    private final boolean pubSubEnabled;
+    private transient BattleshipGamePublisher publisher;
+
+    private final GameState gameState;
 
     public BattleshipGameSubjectImpl(String gameId) throws RemoteException {
+        this(gameId, false);
+    }
+
+    public BattleshipGameSubjectImpl(String gameId, boolean pubSubEnabled) throws RemoteException {
         super();
         this.gameId = gameId;
-        this.observers = new ArrayList<>();
-    }
+        this.observersByUser = new LinkedHashMap<>();
+        this.pubSubEnabled = pubSubEnabled;
+        this.gameState = new GameState(gameId);
 
-    @Override
-    public void attach(BattleshipGameObserver observer) throws RemoteException {
-        if (observers.size() < 2) {
-            observers.add(observer);
-            System.out.println("Player attached to game " + gameId);
-        } else {
-            throw new RemoteException("Game is already full (max 2 players).");
-        }
-    }
-
-    @Override
-    public void detach(BattleshipGameObserver observer) throws RemoteException {
-        observers.remove(observer);
-        System.out.println("Player detached from game " + gameId);
-    }
-
-    @Override
-    public void setState(Object state) throws RemoteException {
-        this.gameState = state;
-        System.out.println("Game " + gameId + " state updated.");
-        notifyObservers();
-    }
-
-    @Override
-    public Object getState() throws RemoteException {
-        return gameState;
-    }
-
-    private void notifyObservers() throws RemoteException {
-        for (BattleshipGameObserver observer : observers) {
+        if (pubSubEnabled) {
             try {
-                observer.update(gameState);
-            } catch (RemoteException e) {
-                System.out.println("Observer not responding. Unsubscribing...");
-                // Idealmente tratar a remoção durante iteração ou após
+                this.publisher = new BattleshipGamePublisher(gameId);
+                System.out.println("[Servidor] RabbitMQ publisher ativo para " + gameId);
+            } catch (Exception e) {
+                // Não impedir o jogo de arrancar caso RabbitMQ não esteja disponível.
+                System.err.println("[Servidor] Aviso: não foi possível iniciar publisher RabbitMQ (" + gameId + "): " + e.getMessage());
+                this.publisher = null;
             }
         }
     }
 
     @Override
+    public synchronized void attach(String username, BattleshipGameObserver observer) throws RemoteException {
+        if (username == null || username.isBlank()) {
+            throw new RemoteException("Username inválido.");
+        }
+        if (observer == null) {
+            throw new RemoteException("Observer não pode ser null.");
+        }
+        if (observersByUser.containsKey(username)) {
+            throw new RemoteException("O utilizador '" + username + "' já está ligado a este jogo.");
+        }
+        if (observersByUser.size() >= 2) {
+            throw new RemoteException("Game is already full (max 2 players).");
+        }
+
+        observersByUser.put(username, observer);
+        gameState.getPlayers().add(username);
+        gameState.getPlayerStates().put(username, new PlayerState());
+
+        gameState.touch();
+        gameState.addEvent("'" + username + "' joined the game.");
+        System.out.println("[Servidor] '" + username + "' attached to game " + gameId);
+
+        if (observersByUser.size() == 1) {
+            gameState.setPhase(GamePhase.WAITING_FOR_PLAYERS);
+            gameState.setCurrentTurn(username);
+        } else if (observersByUser.size() == 2) {
+            // Com 2 jogadores começamos fase de posicionamento de navios.
+            gameState.setPhase(GamePhase.PLACING_SHIPS);
+            // mantém currentTurn no primeiro jogador que entrou
+        }
+
+        propagateState();
+    }
+
+    @Override
+    public synchronized void detach(String username) throws RemoteException {
+        if (username == null || username.isBlank()) {
+            throw new RemoteException("Username inválido.");
+        }
+        BattleshipGameObserver removed = observersByUser.remove(username);
+        gameState.getPlayers().remove(username);
+        gameState.getPlayerStates().remove(username);
+
+        gameState.touch();
+        if (removed != null) {
+            gameState.addEvent("'" + username + "' left the game.");
+            System.out.println("[Servidor] '" + username + "' detached from game " + gameId);
+
+            // Se o jogo já estava em progresso, o outro jogador ganha.
+            if (gameState.getPhase() == GamePhase.IN_PROGRESS || gameState.getPhase() == GamePhase.PLACING_SHIPS) {
+                gameState.setPhase(GamePhase.FINISHED);
+                String winner = observersByUser.keySet().stream().findFirst().orElse(null);
+                gameState.setWinner(winner);
+                if (winner != null) {
+                    gameState.addEvent("Game finished (opponent disconnected). Winner: " + winner);
+                } else {
+                    gameState.addEvent("Game finished (all players left). ");
+                }
+            } else if (observersByUser.isEmpty()) {
+                gameState.setPhase(GamePhase.FINISHED);
+            } else {
+                gameState.setPhase(GamePhase.WAITING_FOR_PLAYERS);
+                gameState.setCurrentTurn(observersByUser.keySet().iterator().next());
+            }
+        }
+
+        propagateState();
+    }
+
+    @Override
+    public synchronized void setState(GameAction action) throws RemoteException {
+        if (action == null) {
+            throw new RemoteException("Action não pode ser null.");
+        }
+        String username = action.getUsername();
+        if (!observersByUser.containsKey(username)) {
+            throw new RemoteException("Jogador '" + username + "' não está associado a este jogo.");
+        }
+        if (gameState.getPhase() == GamePhase.WAITING_FOR_PLAYERS) {
+            throw new RemoteException("Aguardando por 2 jogadores antes de começar.");
+        }
+        if (gameState.getPhase() == GamePhase.FINISHED) {
+            throw new RemoteException("O jogo já terminou.");
+        }
+        if (gameState.getCurrentTurn() != null && !gameState.getCurrentTurn().equals(username)) {
+            throw new RemoteException("Não é a vez de '" + username + "'. Vez atual: " + gameState.getCurrentTurn());
+        }
+
+        gameState.touch();
+
+        switch (action.getType()) {
+            case PLACE_SHIP -> handlePlaceShip(username, action);
+            case FIRE -> handleFire(username, action);
+            case PASS -> handlePass(username);
+            default -> throw new RemoteException("Ação não suportada: " + action.getType());
+        }
+
+        propagateState();
+    }
+
+    @Override
+    public synchronized GameState getState() throws RemoteException {
+        return gameState;
+    }
+
+    private void handlePlaceShip(String username, GameAction action) throws RemoteException {
+        if (gameState.getPhase() != GamePhase.PLACING_SHIPS) {
+            throw new RemoteException("Não é possível posicionar navios na fase: " + gameState.getPhase());
+        }
+        if (action.getShipPlacement() == null) {
+            throw new RemoteException("ShipPlacement em falta.");
+        }
+
+        PlayerState ps = gameState.getPlayerStates().get(username);
+        try {
+            ps.placeNextShip(action.getShipPlacement());
+        } catch (RuntimeException e) {
+            throw new RemoteException(e.getMessage());
+        }
+        gameState.addEvent(username + " placed " + action.getShipPlacement());
+
+        // Se terminou de colocar navios, passa a vez para o outro jogador.
+        if (ps.allShipsPlaced()) {
+            String next = getOpponent(username);
+            if (next != null) {
+                gameState.setCurrentTurn(next);
+            }
+
+            // Se ambos já colocaram navios, começa o jogo.
+            boolean allPlaced = gameState.getPlayers().stream()
+                    .allMatch(u -> gameState.getPlayerStates().get(u) != null && gameState.getPlayerStates().get(u).allShipsPlaced());
+            if (allPlaced) {
+                gameState.setPhase(GamePhase.IN_PROGRESS);
+                // primeira jogada: primeiro jogador que entrou
+                if (!gameState.getPlayers().isEmpty()) {
+                    gameState.setCurrentTurn(gameState.getPlayers().get(0));
+                }
+                gameState.addEvent("All ships placed. Game started.");
+            }
+        }
+    }
+
+    private void handleFire(String username, GameAction action) throws RemoteException {
+        if (gameState.getPhase() != GamePhase.IN_PROGRESS) {
+            throw new RemoteException("Não é possível disparar na fase: " + gameState.getPhase());
+        }
+        if (action.getShot() == null) {
+            throw new RemoteException("Shot em falta.");
+        }
+
+        String opponent = getOpponent(username);
+        if (opponent == null) {
+            throw new RemoteException("Ainda não há oponente.");
+        }
+
+        PlayerState oppState = gameState.getPlayerStates().get(opponent);
+        int r = action.getShot().getTarget().getRow();
+        int c = action.getShot().getTarget().getCol();
+        if (oppState.getHitsReceived()[r][c]) {
+            throw new RemoteException("Posição já foi alvo de tiro: " + action.getShot().getTarget());
+        }
+
+        boolean hit;
+        try {
+            hit = oppState.receiveShot(action.getShot());
+        } catch (RuntimeException e) {
+            throw new RemoteException(e.getMessage());
+        }
+
+        gameState.addEvent(username + " fired at " + action.getShot().getTarget() + " => " + (hit ? "HIT" : "MISS"));
+
+        if (oppState.isAllShipsSunk()) {
+            gameState.setPhase(GamePhase.FINISHED);
+            gameState.setWinner(username);
+            gameState.addEvent("All ships sunk. Winner: " + username);
+            gameState.setCurrentTurn(null);
+        } else {
+            // troca de turno
+            gameState.setCurrentTurn(opponent);
+        }
+    }
+
+    private void handlePass(String username) throws RemoteException {
+        if (gameState.getPhase() != GamePhase.IN_PROGRESS) {
+            throw new RemoteException("Só é possível passar a vez durante o jogo.");
+        }
+        String opponent = getOpponent(username);
+        if (opponent == null) {
+            throw new RemoteException("Ainda não há oponente.");
+        }
+        gameState.addEvent(username + " passed the turn.");
+        gameState.setCurrentTurn(opponent);
+    }
+
+    private String getOpponent(String username) {
+        List<String> ps = gameState.getPlayers();
+        if (ps.size() < 2) return null;
+        return ps.get(0).equals(username) ? ps.get(1) : ps.get(0);
+    }
+
+    private void propagateState() {
+        notifyObserversSafe();
+        publishSafe();
+        maybeClosePublisher();
+    }
+
+    private void maybeClosePublisher() {
+        if (!pubSubEnabled || publisher == null) {
+            return;
+        }
+        if (gameState.getPhase() == GamePhase.FINISHED) {
+            try {
+                publisher.close();
+            } catch (Exception ignored) {
+            } finally {
+                publisher = null;
+            }
+        }
+    }
+
+    private void notifyObserversSafe() {
+        List<String> toRemove = new ArrayList<>();
+        for (Map.Entry<String, BattleshipGameObserver> entry : observersByUser.entrySet()) {
+            BattleshipGameObserver observer = entry.getValue();
+            try {
+                observer.update(gameState);
+            } catch (RemoteException e) {
+                System.out.println("[Servidor] Observer de '" + entry.getKey() + "' não responde. A remover...");
+                toRemove.add(entry.getKey());
+            }
+        }
+
+        for (String u : toRemove) {
+            observersByUser.remove(u);
+            gameState.getPlayers().remove(u);
+            gameState.getPlayerStates().remove(u);
+        }
+    }
+
+    private void publishSafe() {
+        if (!pubSubEnabled || publisher == null) {
+            return;
+        }
+        try {
+            publisher.publish(gameState);
+        } catch (Exception e) {
+            System.err.println("[Servidor] Erro a publicar estado via RabbitMQ (" + gameId + "): " + e.getMessage());
+        }
+    }
+
+    @Override
     public int getPlayerCount() throws RemoteException {
-        return observers.size();
+        return observersByUser.size();
     }
 
     public String getGameId() {

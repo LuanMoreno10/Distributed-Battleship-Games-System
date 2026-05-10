@@ -1,4 +1,44 @@
 # Networked Battleship
+
+## Nota (versão SD / Distribuída)
+
+Este repositório contém também uma implementação **distribuída** baseada em:
+
+- **RMI** (login/lobby + Observer síncrono por callbacks)
+- **RabbitMQ** (Publish/Subscribe assíncrono/persistente) — opcional via `--pubsub`
+
+Entrypoints:
+
+- Servidor: `edu.ufp.inf.sd.battleshipgame.Server.ServerApp`
+- Cliente (CLI): `edu.ufp.inf.sd.battleshipgame.Client.ClientApp`
+
+### Compilar / testar
+
+```bash
+cd /Users/luanmoreno18/Desktop/BattleshipGame
+mvn -q test
+```
+
+### Executar servidor
+
+```bash
+# só RMI
+mvn -q exec:java -Dexec.mainClass=edu.ufp.inf.sd.battleshipgame.Server.ServerApp
+
+# RMI + RabbitMQ
+mvn -q exec:java -Dexec.mainClass=edu.ufp.inf.sd.battleshipgame.Server.ServerApp -Dexec.args="--pubsub"
+```
+
+### Executar cliente (abrir 2 terminais)
+
+```bash
+mvn -q exec:java -Dexec.mainClass=edu.ufp.inf.sd.battleshipgame.Client.ClientApp
+```
+
+No menu do jogo, escolhe o modo de updates:
+
+1) Observer (RMI callbacks) ou 2) Publish/Subscribe (RabbitMQ)
+
 This networked battleship project was a grade 12 final summative assignment built by [Jeevan O](https://github.com/jeevano), [Shivam S](https://github.com/ShivamSood17), and Luvish S. The project was built using Java and focused on the application of object oriented principles.
 The program implements the ServerSocket and Socket classes from the java.net library to establish a  connection between two players located on the same network.
 Communication between the server and client is handled using a separate thread in order to ensure that user can continue to interact with the game interface.

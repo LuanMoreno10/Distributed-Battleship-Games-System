@@ -35,7 +35,7 @@ public class LobbySessionImpl extends UnicastRemoteObject implements LobbySessio
     @Override
     public BattleshipGameSubject createGame() throws RemoteException {
         String gameId = "Game-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        BattleshipGameSubject game = new BattleshipGameSubjectImpl(gameId);
+        BattleshipGameSubject game = new BattleshipGameSubjectImpl(gameId, factory.isPubSubEnabled());
         factory.getActiveGames().put(gameId, game);
         System.out.println("[Servidor] '" + username + "' criou o jogo: " + gameId);
         return game;

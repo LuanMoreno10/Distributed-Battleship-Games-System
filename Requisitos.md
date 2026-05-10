@@ -53,3 +53,79 @@ O que foi criado/alterado:
 
 # R3
 
+------------------------------------------------------------------------------
+
+## O que o R3 pede
+
+Cada `BattleshipGameSubject` deve:
+
+1. Permitir **associar/desassociar** um par de jogadores ao jogo (`attach/detach`).
+2. Gerir o desenrolar do jogo e a respetiva propagação do estado (`setState/getState`).
+3. Só iniciar o jogo depois de **2 jogadores** se associarem.
+4. Implementar a propagação de atualizações de **duas formas** (obrigatório):
+   - **Observer** síncrono/transiente (RMI callbacks)
+   - **Publish/Subscribe** assíncrono/persistente (RabbitMQ)
+
+------------------------------------------------------------------------------
+
+## Implementação feita
+
+### 1) Observer (RMI)
+
+* `BattleshipGameSubject`:
+  - `attach(String username, BattleshipGameObserver observer)`
+  - `detach(String username)`
+  - `setState(GameAction action)`
+  - `getState(): GameState`
+
+* `BattleshipGameSubjectImpl`:
+  - Aceita no máximo **2 jogadores**.
+  - Mantém um `GameState` serializável.
+  - Após cada `setState()`, chama `observer.update(GameState)` para ambos.
+
+* Novos DTOs serializáveis:
+  - `GameState`, `PlayerState`, `GameAction`, `ShipPlacement`, `Shot`, etc.
+
+### 2) Publish/Subscribe (RabbitMQ)
+
+* `BattleshipGamePublisher` (server-side) publica snapshots `GameState` num exchange `fanout`:
+  - Exchange: `battleship.<gameId>`
+  - Mensagens persistentes (`deliveryMode=2`)
+
+* `BattleshipGameConsumer` (client-side) consome de uma fila durável por jogador:
+  - Queue: `battleship.<gameId>.<username>`
+  - Bind ao exchange do jogo
+
+O servidor pode ser iniciado com `--pubsub` para ativar a publicação adicional via RabbitMQ.
+
+------------------------------------------------------------------------------
+
+## Como executar (CLI)
+
+### Compilar
+
+```bash
+cd /Users/luanmoreno18/Desktop/BattleshipGame
+mvn -q test
+```
+
+### Servidor
+
+```bash
+# só RMI (Observer)
+mvn -q exec:java -Dexec.mainClass=edu.ufp.inf.sd.battleshipgame.Server.ServerApp
+
+# RMI + RabbitMQ Pub/Sub
+mvn -q exec:java -Dexec.mainClass=edu.ufp.inf.sd.battleshipgame.Server.ServerApp -Dexec.args="--pubsub"
+```
+
+### Cliente (2 instâncias)
+
+```bash
+mvn -q exec:java -Dexec.mainClass=edu.ufp.inf.sd.battleshipgame.Client.ClientApp
+```
+
+No menu do jogo, escolhe:
+1) Observer (RMI callbacks) **ou** 2) Pub/Sub (RabbitMQ).
+
+

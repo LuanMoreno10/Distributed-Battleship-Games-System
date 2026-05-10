@@ -11,11 +11,18 @@ public class BattleshipFactoryImpl extends UnicastRemoteObject implements Battle
     private final Map<String, LobbySession> activeSessions;
     private final Map<String, BattleshipGameSubject> activeGames;
 
+    private final boolean pubSubEnabled;
+
     public BattleshipFactoryImpl() throws RemoteException {
+        this(false);
+    }
+
+    public BattleshipFactoryImpl(boolean pubSubEnabled) throws RemoteException {
         super();
         this.users = new HashMap<>();
         this.activeSessions = new HashMap<>();
         this.activeGames = new HashMap<>();
+        this.pubSubEnabled = pubSubEnabled;
     }
 
     @Override
@@ -45,6 +52,10 @@ public class BattleshipFactoryImpl extends UnicastRemoteObject implements Battle
     public void removeSession(String username) {
         activeSessions.remove(username);
         System.out.println("[Servidor] Sessão de '" + username + "' terminada.");
+    }
+
+    public boolean isPubSubEnabled() {
+        return pubSubEnabled;
     }
 
     public Map<String, BattleshipGameSubject> getActiveGames() {
