@@ -9,17 +9,29 @@ import java.util.UUID;
 
 public class LobbySessionImpl extends UnicastRemoteObject implements LobbySession {
     private final String username;
+    private final String token;
     private final BattleshipFactoryImpl factory;
 
-    public LobbySessionImpl(String username, BattleshipFactoryImpl factory) throws RemoteException {
+    public LobbySessionImpl(String username, String token, BattleshipFactoryImpl factory) throws RemoteException {
         super();
         this.username = username;
+        this.token = token;
         this.factory = factory;
     }
 
     @Override
     public String getUsername() throws RemoteException {
         return username;
+    }
+
+    @Override
+    public String getToken() throws RemoteException {
+        return token;
+    }
+
+    @Override
+    public void logout() throws RemoteException {
+        factory.removeSession(username);
     }
 
     @Override

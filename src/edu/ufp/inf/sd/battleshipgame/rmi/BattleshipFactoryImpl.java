@@ -43,9 +43,13 @@ public class BattleshipFactoryImpl extends UnicastRemoteObject implements Battle
         if (!users.containsKey(username) || !users.get(username).equals(password)) {
             throw new RemoteException("Credenciais inválidas para o utilizador '" + username + "'.");
         }
-        LobbySession session = new LobbySessionImpl(username, this);
+        if (activeSessions.containsKey(username)) {
+            throw new RemoteException("O utilizador '" + username + "' já tem uma sessão ativa.");
+        }
+        String token = JwtUtils.generateToken(username);
+        LobbySession session = new LobbySessionImpl(username, token, this);
         activeSessions.put(username, session);
-        System.out.println("[Servidor] Utilizador '" + username + "' autenticado com sucesso.");
+        System.out.println("[Servidor] '" + username + "' autenticado. Token gerado.");
         return session;
     }
 

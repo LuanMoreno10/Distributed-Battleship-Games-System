@@ -55,6 +55,12 @@ public class ClientApp {
         scanner.close();
     }
 
+    private static void printToken(LobbySession session) throws RemoteException {
+        String token = session.getToken();
+        String preview = token.substring(0, Math.min(token.length(), 30)) + "...";
+        System.out.println("[JWT] Token de sessão: " + preview + "\n");
+    }
+
     private static LobbySession autenticar(Scanner scanner, BattleshipFactory factory) {
         while (true) {
             System.out.println("--- Autenticação ---");
@@ -72,7 +78,8 @@ public class ClientApp {
                     String password = scanner.nextLine().trim();
                     try {
                         LobbySession session = factory.register(username, password);
-                        System.out.println("Registo e login efetuados com sucesso! Bem-vindo, " + username + "!\n");
+                        System.out.println("Registo e login efetuados! Bem-vindo, " + username + "!");
+                        printToken(session);
                         return session;
                     } catch (RemoteException e) {
                         System.out.println("Erro no registo: " + e.getMessage() + "\n");
@@ -85,7 +92,8 @@ public class ClientApp {
                     String password = scanner.nextLine().trim();
                     try {
                         LobbySession session = factory.login(username, password);
-                        System.out.println("Login efetuado com sucesso! Bem-vindo, " + username + "!\n");
+                        System.out.println("Login efetuado! Bem-vindo, " + username + "!");
+                        printToken(session);
                         return session;
                     } catch (RemoteException e) {
                         System.out.println("Erro no login: " + e.getMessage() + "\n");
@@ -100,13 +108,13 @@ public class ClientApp {
     }
 
     private static void menuLobby(Scanner scanner, LobbySession session) {
-        while (true) {
-            try {
+        try {
+            while (true) {
                 System.out.println("--- Lobby (" + session.getUsername() + ") ---");
                 System.out.println("1. Listar jogos disponíveis");
                 System.out.println("2. Criar novo jogo");
                 System.out.println("3. Entrar num jogo existente");
-                System.out.println("0. Sair");
+                System.out.println("0. Logout e sair");
                 System.out.print("Opção: ");
                 String opcao = scanner.nextLine().trim();
 
@@ -115,15 +123,15 @@ public class ClientApp {
                     case "2" -> criarJogo(session);
                     case "3" -> entrarJogo(scanner, session);
                     case "0" -> {
-                        System.out.println("A sair do lobby...");
+                        session.logout();
+                        System.out.println("Sessão terminada. Até logo!\n");
                         return;
                     }
                     default -> System.out.println("Opção inválida.\n");
                 }
-            } catch (RemoteException e) {
-                System.err.println("Erro de comunicação com o servidor: " + e.getMessage());
-                return;
             }
+        } catch (RemoteException e) {
+            System.err.println("Erro de comunicação com o servidor: " + e.getMessage());
         }
     }
 
