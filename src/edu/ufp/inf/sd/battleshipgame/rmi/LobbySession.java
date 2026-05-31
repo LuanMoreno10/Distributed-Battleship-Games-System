@@ -13,7 +13,8 @@ public interface LobbySession extends Remote {
 
     List<GameInfo> listGames() throws RemoteException;
 
-    BattleshipGameSubject createGame() throws RemoteException;
+    /** mode: "RMI" ou "PUBSUB" */
+    BattleshipGameSubject createGame(String mode) throws RemoteException;
 
     BattleshipGameSubject getProxy(String gameId) throws RemoteException;
 }

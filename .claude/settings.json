@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn compile *)",
+      "Bash(mvn exec:java -Dexec.mainClass=\"edu.ufp.inf.sd.battleshipgame.Server.ServerApp\")",
+      "Bash(jobs -l)",
+      "Bash(mvn dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt -q)",
+      "Read(//tmp/**)",
+      "Bash(find \"/home/joaosantos/Documents/Faculdade/3º/2º\" -name \"*.sh\" 2>/dev/null | head -40)",
+      "Read(//home/joaosantos/Documents/Faculdade/3º/2º/**)",
+      "Read(//usr/lib/jvm/**)",
+      "Bash(java -version)",
+      "Bash(chmod +x runscripts/*.sh)",
+      "Bash(timeout 5 bash _2_runserver.sh)",
+      "Bash(pkill -f \"battleshipgame\")",
+      "Bash(timeout 4 bash _2_runserver.sh)"
+    ]
+  }
+}

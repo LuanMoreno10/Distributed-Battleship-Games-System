@@ -11,22 +11,20 @@ public class GameInfo implements Serializable {
 
     private final String gameId;
     private final int playerCount;
+    private final String mode;
 
-    public GameInfo(String gameId, int playerCount) {
+    public GameInfo(String gameId, int playerCount, String mode) {
         this.gameId = gameId;
         this.playerCount = playerCount;
+        this.mode = mode;
     }
 
-    public String getGameId() {
-        return gameId;
-    }
-
-    public int getPlayerCount() {
-        return playerCount;
-    }
+    public String getGameId()    { return gameId; }
+    public int    getPlayerCount() { return playerCount; }
+    public String getMode()      { return mode; }
 
     @Override
     public String toString() {
-        return gameId + " (" + playerCount + "/2 jogadores)";
+        return gameId + " (" + playerCount + "/2 jogadores, modo: " + mode + ")";
     }
 }

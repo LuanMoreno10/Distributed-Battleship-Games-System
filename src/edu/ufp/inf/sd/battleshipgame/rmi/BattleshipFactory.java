@@ -7,4 +7,7 @@ public interface BattleshipFactory extends Remote {
     LobbySession register(String username, String password) throws RemoteException;
 
     LobbySession login(String username, String password) throws RemoteException;
+
+    /** Número de sessões ativas — usado pelo cliente para escolher o nó menos carregado (R5). */
+    int getSessionCount() throws RemoteException;
 }

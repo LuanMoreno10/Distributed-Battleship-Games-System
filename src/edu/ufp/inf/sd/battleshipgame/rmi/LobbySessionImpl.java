@@ -39,17 +39,18 @@ public class LobbySessionImpl extends UnicastRemoteObject implements LobbySessio
         List<GameInfo> jogos = new ArrayList<>();
         for (Map.Entry<String, BattleshipGameSubject> entry : factory.getActiveGames().entrySet()) {
             int players = entry.getValue().getPlayerCount();
-            jogos.add(new GameInfo(entry.getKey(), players));
+            String mode = entry.getValue().getGameMode();
+            jogos.add(new GameInfo(entry.getKey(), players, mode));
         }
         return jogos;
     }
 
     @Override
-    public BattleshipGameSubject createGame() throws RemoteException {
+    public BattleshipGameSubject createGame(String mode) throws RemoteException {
         String gameId = "Game-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        BattleshipGameSubject game = new BattleshipGameSubjectImpl(gameId, factory.isPubSubEnabled());
+        BattleshipGameSubject game = new BattleshipGameSubjectImpl(gameId, mode);
         factory.getActiveGames().put(gameId, game);
-        System.out.println("[Servidor] '" + username + "' criou o jogo: " + gameId);
+        System.out.println("[Servidor] '" + username + "' criou o jogo: " + gameId + " [" + mode + "]");
         return game;
     }
 

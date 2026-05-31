@@ -5,28 +5,33 @@ import java.rmi.server.UnicastRemoteObject;
 import java.util.HashMap;
 import java.util.Map;
 
-public class BattleshipFactoryImpl extends UnicastRemoteObject implements BattleshipFactory {
-    // Para simplificar persistência e base de dados, guardamos em memória
-    private final Map<String, String> users; // username & password
-    private final Map<String, LobbySession> activeSessions;
-    private final Map<String, BattleshipGameSubject> activeGames;
+/**
+ * Implementação da BattleshipFactory.
+ * Também implementa BattleshipFactoryPeer para sincronização entre nós (R5).
+ */
+public class BattleshipFactoryImpl extends UnicastRemoteObject
+        implements BattleshipFactory, BattleshipFactoryPeer {
 
-    private final boolean pubSubEnabled;
+    private final Map<String, String> users = new HashMap<>();
+    private final Map<String, LobbySession> activeSessions = new HashMap<>();
+    private final Map<String, BattleshipGameSubject> activeGames = new HashMap<>();
 
-    public BattleshipFactoryImpl() throws RemoteException {
-        this(false);
-    }
+    private final String nodeId;
 
-    public BattleshipFactoryImpl(boolean pubSubEnabled) throws RemoteException {
+    /** Referência ao nó par para replicação. Pode ser null se o peer ainda não estiver disponível. */
+    private volatile BattleshipFactoryPeer peer;
+
+    public BattleshipFactoryImpl(String nodeId) throws RemoteException {
         super();
-        this.users = new HashMap<>();
-        this.activeSessions = new HashMap<>();
-        this.activeGames = new HashMap<>();
-        this.pubSubEnabled = pubSubEnabled;
+        this.nodeId = nodeId;
     }
+
+    // -------------------------------------------------------------------------
+    // BattleshipFactory — acesso dos clientes
+    // -------------------------------------------------------------------------
 
     @Override
-    public LobbySession register(String username, String password) throws RemoteException {
+    public synchronized LobbySession register(String username, String password) throws RemoteException {
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             throw new RemoteException("Username e password não podem estar vazios.");
         }
@@ -34,12 +39,16 @@ public class BattleshipFactoryImpl extends UnicastRemoteObject implements Battle
             throw new RemoteException("Utilizador '" + username + "' já existe.");
         }
         users.put(username, password);
-        System.out.println("[Servidor] Novo utilizador registado: " + username);
+        System.out.println("[" + nodeId + "] Novo utilizador registado: " + username);
+
+        // Replicar para o peer (R5)
+        replicateRegister(username, password);
+
         return login(username, password);
     }
 
     @Override
-    public LobbySession login(String username, String password) throws RemoteException {
+    public synchronized LobbySession login(String username, String password) throws RemoteException {
         if (!users.containsKey(username) || !users.get(username).equals(password)) {
             throw new RemoteException("Credenciais inválidas para o utilizador '" + username + "'.");
         }
@@ -49,20 +58,94 @@ public class BattleshipFactoryImpl extends UnicastRemoteObject implements Battle
         String token = JwtUtils.generateToken(username);
         LobbySession session = new LobbySessionImpl(username, token, this);
         activeSessions.put(username, session);
-        System.out.println("[Servidor] '" + username + "' autenticado. Token gerado.");
+        System.out.println("[" + nodeId + "] '" + username + "' autenticado. Token gerado.");
         return session;
     }
 
-    public void removeSession(String username) {
+    public synchronized void removeSession(String username) {
         activeSessions.remove(username);
-        System.out.println("[Servidor] Sessão de '" + username + "' terminada.");
+        System.out.println("[" + nodeId + "] Sessão de '" + username + "' terminada.");
+        replicateLogout(username);
     }
 
-    public boolean isPubSubEnabled() {
-        return pubSubEnabled;
+    // -------------------------------------------------------------------------
+    // BattleshipFactoryPeer — sincronização entre nós (R5)
+    // -------------------------------------------------------------------------
+
+    @Override
+    public synchronized void syncRegister(String username, String password) throws RemoteException {
+        if (!users.containsKey(username)) {
+            users.put(username, password);
+            System.out.println("[" + nodeId + "] [SYNC] Utilizador replicado: " + username);
+        }
     }
 
-    public Map<String, BattleshipGameSubject> getActiveGames() {
-        return activeGames;
+    @Override
+    public synchronized void syncLogout(String username) throws RemoteException {
+        activeSessions.remove(username);
     }
+
+    @Override
+    public boolean ping() throws RemoteException {
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // Replicação para o peer (melhor-esforço — não bloqueia em caso de falha)
+    // -------------------------------------------------------------------------
+
+    private void replicateRegister(String username, String password) {
+        BattleshipFactoryPeer p = peer;
+        if (p == null) return;
+        try {
+            p.syncRegister(username, password);
+        } catch (RemoteException e) {
+            System.err.println("[" + nodeId + "] Aviso: falha ao replicar registo para peer: " + e.getMessage());
+            peer = null; // peer caiu; o nó continua a funcionar sozinho
+        }
+    }
+
+    private void replicateLogout(String username) {
+        BattleshipFactoryPeer p = peer;
+        if (p == null) return;
+        try {
+            p.syncLogout(username);
+        } catch (RemoteException e) {
+            System.err.println("[" + nodeId + "] Aviso: falha ao replicar logout para peer: " + e.getMessage());
+            peer = null;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Gestão do peer (chamado pelo ServerApp após arranque)
+    // -------------------------------------------------------------------------
+
+    /** Liga este nó ao seu par. Aceita null para desligar. */
+    public void setPeer(BattleshipFactoryPeer peer) {
+        this.peer = peer;
+        if (peer != null) {
+            System.out.println("[" + nodeId + "] Peer ligado. Replicação ativa.");
+        }
+    }
+
+    public boolean hasPeer() {
+        return peer != null;
+    }
+
+    public BattleshipFactoryPeer getPeerRef() {
+        return peer;
+    }
+
+    // -------------------------------------------------------------------------
+    // Acessores internos (usados por LobbySessionImpl)
+    // -------------------------------------------------------------------------
+
+    @Override
+    public synchronized int getSessionCount() throws RemoteException {
+        return activeSessions.size();
+    }
+
+    public Map<String, BattleshipGameSubject> getActiveGames() { return activeGames; }
+
+    public String getNodeId() { return nodeId; }
 }

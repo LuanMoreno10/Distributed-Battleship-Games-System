@@ -23,4 +23,9 @@ public interface BattleshipGameSubject extends Remote {
     GameState getState() throws RemoteException;
 
     int getPlayerCount() throws RemoteException;
+
+    String getGameId() throws RemoteException;
+
+    /** Devolve o modo escolhido pelo criador: "RMI" ou "PUBSUB". */
+    String getGameMode() throws RemoteException;
 }

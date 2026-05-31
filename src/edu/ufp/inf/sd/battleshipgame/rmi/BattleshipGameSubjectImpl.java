@@ -11,31 +11,27 @@ import java.util.Map;
 
 public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements BattleshipGameSubject {
     private final String gameId;
+    private final String gameMode; // "RMI" ou "PUBSUB"
     private final Map<String, BattleshipGameObserver> observersByUser;
 
-    private final boolean pubSubEnabled;
     private transient BattleshipGamePublisher publisher;
 
     private final GameState gameState;
 
-    public BattleshipGameSubjectImpl(String gameId) throws RemoteException {
-        this(gameId, false);
-    }
-
-    public BattleshipGameSubjectImpl(String gameId, boolean pubSubEnabled) throws RemoteException {
+    public BattleshipGameSubjectImpl(String gameId, String gameMode) throws RemoteException {
         super();
         this.gameId = gameId;
+        this.gameMode = gameMode != null ? gameMode.toUpperCase() : "RMI";
         this.observersByUser = new LinkedHashMap<>();
-        this.pubSubEnabled = pubSubEnabled;
         this.gameState = new GameState(gameId);
 
-        if (pubSubEnabled) {
+        // Só arranca o publisher RabbitMQ se o modo escolhido for PUBSUB.
+        if ("PUBSUB".equals(this.gameMode)) {
             try {
                 this.publisher = new BattleshipGamePublisher(gameId);
                 System.out.println("[Servidor] RabbitMQ publisher ativo para " + gameId);
             } catch (Exception e) {
-                // Não impedir o jogo de arrancar caso RabbitMQ não esteja disponível.
-                System.err.println("[Servidor] Aviso: não foi possível iniciar publisher RabbitMQ (" + gameId + "): " + e.getMessage());
+                System.out.println("[Servidor] RabbitMQ não disponível para " + gameId + " — a usar só RMI.");
                 this.publisher = null;
             }
         }
@@ -249,9 +245,7 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
     }
 
     private void maybeClosePublisher() {
-        if (!pubSubEnabled || publisher == null) {
-            return;
-        }
+        if (publisher == null) return;
         if (gameState.getPhase() == GamePhase.FINISHED) {
             try {
                 publisher.close();
@@ -282,9 +276,7 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
     }
 
     private void publishSafe() {
-        if (!pubSubEnabled || publisher == null) {
-            return;
-        }
+        if (publisher == null) return;
         try {
             publisher.publish(gameState);
         } catch (Exception e) {
@@ -297,7 +289,13 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
         return observersByUser.size();
     }
 
-    public String getGameId() {
+    @Override
+    public String getGameId() throws RemoteException {
         return gameId;
+    }
+
+    @Override
+    public String getGameMode() throws RemoteException {
+        return gameMode;
     }
 }
