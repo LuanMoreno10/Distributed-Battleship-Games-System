@@ -99,6 +99,8 @@ public class ServerApp {
                 peer.ping(); // confirmar que está vivo
                 factory.setPeer(peer);
                 System.out.println("[" + nodeId + "] Ligado ao peer " + peerAddress + " (tentativa " + attempt + ").");
+                // Apresenta-se ao peer e sincroniza utilizadores nos dois sentidos
+                peer.registerAsPeer(factory, factory.getUsers());
 
                 // Monitorizar o peer: se cair, limpar a referência e tentar reconectar
                 monitorPeer(factory, peerHost, peerPort, nodeId);

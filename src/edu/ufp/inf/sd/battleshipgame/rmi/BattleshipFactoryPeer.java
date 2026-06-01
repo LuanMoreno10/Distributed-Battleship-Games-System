@@ -17,4 +17,12 @@ public interface BattleshipFactoryPeer extends Remote {
 
     /** Health-check para detetar se o nó está vivo. */
     boolean ping() throws RemoteException;
+
+    /**
+     * Registo bidirecional: o nó B apresenta-se ao nó A como peer,
+     * e envia todos os utilizadores que já tem para sincronização inicial.
+     * Permite que o Nó B se ligue ao Nó A depois deste já estar a correr.
+     */
+    void registerAsPeer(BattleshipFactoryPeer caller, java.util.Map<String, String> existingUsers)
+            throws RemoteException;
 }

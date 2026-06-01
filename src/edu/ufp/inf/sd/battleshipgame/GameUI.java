@@ -218,16 +218,38 @@ public class GameUI extends JFrame {
     private void attachToGame() {
         try {
             if (usePubSub) {
+                boolean rabbitOk = false;
                 try {
                     consumer = new BattleshipGameConsumer(gameId, username);
                     consumer.start(state -> SwingUtilities.invokeLater(() -> onStateUpdate(state)));
+                    rabbitOk = true;
+                    System.out.println("[GameUI] RabbitMQ consumer ativo para " + gameId);
                 } catch (Exception ex) {
-                    System.err.println("[GameUI] RabbitMQ indisponível, sem atualizações PubSub: " + ex.getMessage());
+                    System.err.println("[GameUI] RabbitMQ indisponível: " + ex.getMessage());
                 }
-                game.attach(username, new NullObserver());
+
+                if (rabbitOk) {
+                    // RabbitMQ ok — usa NullObserver (updates chegam pelo consumer)
+                    game.attach(username, new NullObserver());
+                    setTitle(getTitle().replace("[PubSub/RabbitMQ]", "[PubSub/RabbitMQ]"));
+                } else {
+                    // RabbitMQ falhou — fallback automático para Observer/RMI
+                    System.out.println("[GameUI] Fallback para Observer/RMI.");
+                    game.attach(username, new GameObserver());
+                    setTitle(getTitle().replace("[PubSub/RabbitMQ]", "[RMI — RabbitMQ indisponível]"));
+                    SwingUtilities.invokeLater(() ->
+                        lblStatus.setText("RabbitMQ indisponível — a usar Observer/RMI automaticamente."));
+                }
             } else {
                 game.attach(username, new GameObserver());
             }
+
+            // Garante que o estado inicial é sempre carregado via RMI.
+            // No modo PubSub o estado chega de forma assíncrona — sem isto
+            // lastState ficaria null e nenhum botão seria ativado.
+            GameState estadoInicial = game.getState();
+            SwingUtilities.invokeLater(() -> onStateUpdate(estadoInicial));
+
         } catch (Exception ex) {
             showError("Erro ao entrar no jogo:\n" + ex.getMessage());
         }

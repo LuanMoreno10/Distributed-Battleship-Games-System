@@ -90,6 +90,29 @@ public class BattleshipFactoryImpl extends UnicastRemoteObject
         return true;
     }
 
+    @Override
+    public synchronized void registerAsPeer(BattleshipFactoryPeer caller,
+                                             java.util.Map<String, String> callerUsers)
+            throws RemoteException {
+        // Define o caller como peer deste nó (registo bidirecional)
+        setPeer(caller);
+        // Sincroniza os utilizadores que o caller já tem
+        for (java.util.Map.Entry<String, String> entry : callerUsers.entrySet()) {
+            if (!users.containsKey(entry.getKey())) {
+                users.put(entry.getKey(), entry.getValue());
+                System.out.println("[" + nodeId + "] [SYNC] Utilizador recebido via registerAsPeer: "
+                        + entry.getKey());
+            }
+        }
+        // Envia de volta os utilizadores deste nó ao caller
+        for (java.util.Map.Entry<String, String> entry : users.entrySet()) {
+            try {
+                caller.syncRegister(entry.getKey(), entry.getValue());
+            } catch (RemoteException ignored) {}
+        }
+        System.out.println("[" + nodeId + "] Peer bidirecional estabelecido. Utilizadores sincronizados.");
+    }
+
     // -------------------------------------------------------------------------
     // Replicação para o peer (melhor-esforço — não bloqueia em caso de falha)
     // -------------------------------------------------------------------------
@@ -144,6 +167,8 @@ public class BattleshipFactoryImpl extends UnicastRemoteObject
     public synchronized int getSessionCount() throws RemoteException {
         return activeSessions.size();
     }
+
+    public synchronized Map<String, String> getUsers() { return new HashMap<>(users); }
 
     public Map<String, BattleshipGameSubject> getActiveGames() { return activeGames; }
 
