@@ -1,13 +1,13 @@
 package edu.ufp.inf.sd.battleshipgame.Server;
 
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactoryImpl;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactoryPeer;
-
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.ExportException;
 import java.util.concurrent.CountDownLatch;
+
+import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactoryImpl;
+import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactoryPeerRI;
 
 /**
  * Ponto de entrada do servidor.
@@ -35,10 +35,6 @@ public class ServerApp {
             switch (args[i].toLowerCase()) {
                 case "--port" -> port        = Integer.parseInt(args[++i]);
                 case "--peer" -> peerAddress = args[++i];
-                case "--help", "-h" -> {
-                    printHelp();
-                    return;
-                }
             }
         }
 
@@ -57,6 +53,7 @@ public class ServerApp {
 
             // Registar como serviço principal (para clientes)
             registry.rebind(SERVICE_NAME, factory);
+            
             // Registar também como peer (para sincronização entre nós)
             registry.rebind(PEER_NAME, factory);
 
@@ -95,7 +92,7 @@ public class ServerApp {
         for (int attempt = 1; attempt <= PEER_RETRIES; attempt++) {
             try {
                 Registry peerRegistry = LocateRegistry.getRegistry(peerHost, peerPort);
-                BattleshipFactoryPeer peer = (BattleshipFactoryPeer) peerRegistry.lookup(PEER_NAME);
+                BattleshipFactoryPeerRI peer = (BattleshipFactoryPeerRI) peerRegistry.lookup(PEER_NAME);
                 peer.ping(); // confirmar que está vivo
                 factory.setPeer(peer);
                 System.out.println("[" + nodeId + "] Ligado ao peer " + peerAddress + " (tentativa " + attempt + ").");
@@ -138,16 +135,5 @@ public class ServerApp {
                 factory.setPeer(null);
             }
         }
-    }
-
-    private static void printHelp() {
-        System.out.println("Uso: ServerApp [--port <N>] [--pubsub] [--peer <host>:<port>]");
-        System.out.println("  --port N       porta RMI (padrão: 1099)");
-        System.out.println("  --pubsub       ativa propagação via RabbitMQ");
-        System.out.println("  --peer h:p     endereço do nó par para replicação (R5)");
-        System.out.println();
-        System.out.println("Exemplo — 2 nós:");
-        System.out.println("  ServerApp --port 1099 --peer localhost:1100");
-        System.out.println("  ServerApp --port 1100 --peer localhost:1099");
     }
 }

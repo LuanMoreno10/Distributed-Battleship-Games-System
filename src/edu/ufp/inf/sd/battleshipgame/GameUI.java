@@ -1,8 +1,26 @@
 package edu.ufp.inf.sd.battleshipgame;
 
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.rmi.RemoteException;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.List;
+
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.SwingUtilities;
+
 import edu.ufp.inf.sd.battleshipgame.pubsub.BattleshipGameConsumer;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameObserver;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameSubject;
+import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameObserverRI;
+import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameSubjectRI;
 import edu.ufp.inf.sd.battleshipgame.rmi.Coordinate;
 import edu.ufp.inf.sd.battleshipgame.rmi.GameAction;
 import edu.ufp.inf.sd.battleshipgame.rmi.GamePhase;
@@ -12,23 +30,16 @@ import edu.ufp.inf.sd.battleshipgame.rmi.PlayerState;
 import edu.ufp.inf.sd.battleshipgame.rmi.ShipPlacement;
 import edu.ufp.inf.sd.battleshipgame.rmi.Shot;
 
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
-import java.rmi.RemoteException;
-import java.rmi.server.UnicastRemoteObject;
-import java.util.List;
-
 /**
  * Interface gráfica do jogo. Abre depois do login/lobby no terminal.
  * Suporta ambos os modos de atualização: Observer/RMI e Publish-Subscribe/RabbitMQ.
  */
 public class GameUI extends JFrame {
 
-    private final BattleshipGameSubject game;
+    private final BattleshipGameSubjectRI game;
     private final String gameId;
     private final String username;
+    private final String token;
     private final boolean usePubSub;
 
     // Boards reutilizados da implementação original
@@ -45,11 +56,12 @@ public class GameUI extends JFrame {
     private volatile GameState lastState;
     private BattleshipGameConsumer consumer;
 
-    public GameUI(BattleshipGameSubject game, String gameId, String username, boolean usePubSub) {
+    public GameUI(BattleshipGameSubjectRI game, String gameId, String username, String token, boolean usePubSub) {
         super("Battleship  —  " + username + "  [" + (usePubSub ? "PubSub/RabbitMQ" : "Observer/RMI") + "]");
         this.game = game;
         this.gameId = gameId;
         this.username = username;
+        this.token = token;
         this.usePubSub = usePubSub;
 
         this.myBoard = new Board();
@@ -204,7 +216,7 @@ public class GameUI extends JFrame {
 
         btnPass.addActionListener(e -> {
             try {
-                game.setState(GameAction.pass(username));
+                game.setState(token, GameAction.pass(username));
             } catch (RemoteException ex) {
                 showError("Erro ao passar a vez:\n" + ex.getMessage());
             }
@@ -230,24 +242,24 @@ public class GameUI extends JFrame {
 
                 if (rabbitOk) {
                     // RabbitMQ ok — usa NullObserver (updates chegam pelo consumer)
-                    game.attach(username, new NullObserver());
+                    game.attach(token, username, new NullObserver());
                     setTitle(getTitle().replace("[PubSub/RabbitMQ]", "[PubSub/RabbitMQ]"));
                 } else {
                     // RabbitMQ falhou — fallback automático para Observer/RMI
                     System.out.println("[GameUI] Fallback para Observer/RMI.");
-                    game.attach(username, new GameObserver());
+                    game.attach(token, username, new GameObserver());
                     setTitle(getTitle().replace("[PubSub/RabbitMQ]", "[RMI — RabbitMQ indisponível]"));
                     SwingUtilities.invokeLater(() ->
                         lblStatus.setText("RabbitMQ indisponível — a usar Observer/RMI automaticamente."));
                 }
             } else {
-                game.attach(username, new GameObserver());
+                game.attach(token, username, new GameObserver());
             }
 
             // Garante que o estado inicial é sempre carregado via RMI.
             // No modo PubSub o estado chega de forma assíncrona — sem isto
             // lastState ficaria null e nenhum botão seria ativado.
-            GameState estadoInicial = game.getState();
+            GameState estadoInicial = game.getState(token);
             SwingUtilities.invokeLater(() -> onStateUpdate(estadoInicial));
 
         } catch (Exception ex) {
@@ -404,7 +416,7 @@ public class GameUI extends JFrame {
         Orientation orientation = isVertical ? Orientation.VERTICAL : Orientation.HORIZONTAL;
         ShipPlacement placement = new ShipPlacement(new Coordinate(row, col), len, orientation);
         try {
-            game.setState(GameAction.placeShip(username, placement));
+            game.setState(token, GameAction.placeShip(username, placement));
         } catch (RemoteException ex) {
             showError("Não foi possível colocar navio:\n" + ex.getMessage());
         }
@@ -414,7 +426,7 @@ public class GameUI extends JFrame {
         if (lastState == null || lastState.getPhase() != GamePhase.IN_PROGRESS) return;
         if (!username.equals(lastState.getCurrentTurn())) return;
         try {
-            game.setState(GameAction.fire(username, new Shot(new Coordinate(row, col))));
+            game.setState(token, GameAction.fire(username, new Shot(new Coordinate(row, col))));
         } catch (RemoteException ex) {
             showError("Não foi possível disparar:\n" + ex.getMessage());
         }
@@ -425,7 +437,7 @@ public class GameUI extends JFrame {
     // -------------------------------------------------------------------------
 
     private void leaveGame() {
-        try { game.detach(username); } catch (Exception ignored) {}
+        try { game.detach(token, username); } catch (Exception ignored) {}
         if (consumer != null) { try { consumer.close(); } catch (Exception ignored) {} }
     }
 
@@ -446,7 +458,7 @@ public class GameUI extends JFrame {
     // -------------------------------------------------------------------------
 
     /** Observer RMI: recebe update() e repassa para o EDT. */
-    private class GameObserver extends UnicastRemoteObject implements BattleshipGameObserver {
+    private class GameObserver extends UnicastRemoteObject implements BattleshipGameObserverRI {
         protected GameObserver() throws RemoteException { super(); }
 
         @Override
@@ -456,7 +468,7 @@ public class GameUI extends JFrame {
     }
 
     /** Observer nulo: usado no modo PubSub (attach é obrigatório mas callbacks são via RabbitMQ). */
-    private static class NullObserver extends UnicastRemoteObject implements BattleshipGameObserver {
+    private static class NullObserver extends UnicastRemoteObject implements BattleshipGameObserverRI {
         protected NullObserver() throws RemoteException { super(); }
 
         @Override

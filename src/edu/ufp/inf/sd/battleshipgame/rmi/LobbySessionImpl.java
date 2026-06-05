@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public class LobbySessionImpl extends UnicastRemoteObject implements LobbySession {
+public class LobbySessionImpl extends UnicastRemoteObject implements LobbySessionRI {
     private final String username;
     private final String token;
     private final BattleshipFactoryImpl factory;
@@ -19,8 +19,15 @@ public class LobbySessionImpl extends UnicastRemoteObject implements LobbySessio
         this.factory = factory;
     }
 
+    private void validateToken(String token) throws RemoteException {
+        if (!JwtUtils.isTokenValid(token) || !JwtUtils.getUsernameFromToken(token).equals(username)) {
+            throw new RemoteException("Token inválido ou não autorizado.");
+        }
+    }
+
     @Override
-    public String getUsername() throws RemoteException {
+    public String getUsername(String token) throws RemoteException {
+        validateToken(token);
         return username;
     }
 
@@ -30,14 +37,16 @@ public class LobbySessionImpl extends UnicastRemoteObject implements LobbySessio
     }
 
     @Override
-    public void logout() throws RemoteException {
+    public void logout(String token) throws RemoteException {
+        validateToken(token);
         factory.removeSession(username);
     }
 
     @Override
-    public List<GameInfo> listGames() throws RemoteException {
+    public List<GameInfo> listGames(String token) throws RemoteException {
+        validateToken(token);
         List<GameInfo> jogos = new ArrayList<>();
-        for (Map.Entry<String, BattleshipGameSubject> entry : factory.getActiveGames().entrySet()) {
+        for (Map.Entry<String, BattleshipGameSubjectRI> entry : factory.getActiveGames().entrySet()) {
             int players = entry.getValue().getPlayerCount();
             String mode = entry.getValue().getGameMode();
             jogos.add(new GameInfo(entry.getKey(), players, mode));
@@ -45,18 +54,24 @@ public class LobbySessionImpl extends UnicastRemoteObject implements LobbySessio
         return jogos;
     }
 
+
+
+
+    
     @Override
-    public BattleshipGameSubject createGame(String mode) throws RemoteException {
+    public BattleshipGameSubjectRI createGame(String token, String mode) throws RemoteException {
+        validateToken(token);
         String gameId = "Game-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        BattleshipGameSubject game = new BattleshipGameSubjectImpl(gameId, mode);
+        BattleshipGameSubjectRI game = new BattleshipGameSubjectImpl(gameId, mode);
         factory.getActiveGames().put(gameId, game);
         System.out.println("[Servidor] '" + username + "' criou o jogo: " + gameId + " [" + mode + "]");
         return game;
     }
 
     @Override
-    public BattleshipGameSubject getProxy(String gameId) throws RemoteException {
-        BattleshipGameSubject game = factory.getActiveGames().get(gameId);
+    public BattleshipGameSubjectRI getProxy(String token, String gameId) throws RemoteException {
+        validateToken(token);
+        BattleshipGameSubjectRI game = factory.getActiveGames().get(gameId);
         if (game == null) {
             throw new RemoteException("Jogo '" + gameId + "' não encontrado.");
         }

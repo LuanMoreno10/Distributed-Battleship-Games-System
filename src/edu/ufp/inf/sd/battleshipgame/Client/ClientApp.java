@@ -1,27 +1,29 @@
 package edu.ufp.inf.sd.battleshipgame.Client;
 
-import edu.ufp.inf.sd.battleshipgame.GameUI;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactory;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameSubject;
-import edu.ufp.inf.sd.battleshipgame.rmi.GameInfo;
-import edu.ufp.inf.sd.battleshipgame.rmi.LobbySession;
-
+import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
+
+import edu.ufp.inf.sd.battleshipgame.GameUI;
+import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactoryRI;
+import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameSubjectRI;
+import edu.ufp.inf.sd.battleshipgame.rmi.GameInfo;
+import edu.ufp.inf.sd.battleshipgame.rmi.LobbySessionRI;
 
 public class ClientApp {
 
     private static final String SERVICE_NAME = "BattleshipFactory";
 
-    // Nós conhecidos — escolhe automaticamente o menos carregado (R5)
-    private static final String[][] DEFAULT_SERVERS = {
-        {"localhost", "1099"},
-        {"localhost", "1100"}
-    };
+    // Nós conhecidos — preenchidos a partir dos args --servers (setenv.sh)
+    private static String[][] DEFAULT_SERVERS;
+
+   
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
@@ -29,81 +31,74 @@ public class ClientApp {
         System.out.println("=== Battleship - Cliente ===");
         System.out.println("A procurar servidor disponível...");
 
-        BattleshipFactory factory = ligarAoMelhorNo(args);
+        BattleshipFactoryRI factory = ligarAoMelhorNo(args);
+
         if (factory == null) {
             System.err.println("Nenhum servidor disponível. Verifica se o servidor está a correr.");
+            scanner.close();
             return;
         }
 
-        // Guarda credenciais para failover automático (R5)
-        String[] credenciais = new String[2]; // [username, password]
-        LobbySession session = autenticar(scanner, factory, credenciais);
-        if (session == null) {
-            System.out.println("A encerrar o cliente.");
-            return;
+        try {
+            factory.connect();
+            String[] credenciais = new String[2];
+            LobbySessionRI session = autenticar(scanner, factory, credenciais);
+            if (session != null) {
+                String token = session.getToken();
+                menuLobby(scanner, session, token, credenciais);
+            }
+        } catch (RemoteException e) {
+            System.err.println("Erro: " + e.getMessage());
+        } finally {
+            try { factory.disconnect(); } catch (RemoteException ignored) {}
+            scanner.close();
         }
-
-        menuLobby(scanner, session, credenciais);
-        scanner.close();
     }
 
     // -------------------------------------------------------------------------
     // Ligação ao servidor (balanceamento de carga — R5)
     // -------------------------------------------------------------------------
 
-    /**
-     * Tenta ligar a todos os nós conhecidos e escolhe o com menos sessões ativas.
-     * Se só um estiver disponível usa esse — tolerância a falhas (R5).
-     */
-    private static BattleshipFactory ligarAoMelhorNo(String[] args) {
-        // Override manual via --port (para testes de R5)
-        for (int i = 0; i < args.length - 1; i++) {
-            if ("--port".equals(args[i])) {
-                return tentarLigar("localhost", args[i + 1]);
+    private static BattleshipFactoryRI ligarAoMelhorNo(String[] args) {
+
+        // parse dos argumentos --servers host:port
+        if (args.length > 1 && "--servers".equals(args[0])) {
+            DEFAULT_SERVERS = new String[args.length - 1][2];
+            for (int i = 1; i < args.length; i++) {
+                DEFAULT_SERVERS[i - 1] = args[i].split(":");
             }
         }
 
-        BattleshipFactory melhor = null;
-        int menorCarga = Integer.MAX_VALUE;
 
+        List<BattleshipFactoryRI> servidores = new ArrayList<>();
+        List<Integer> cargas = new ArrayList<>();
+        
+    
+        
         for (String[] srv : DEFAULT_SERVERS) {
-            BattleshipFactory f = tentarLigar(srv[0], srv[1]);
-            if (f == null) continue;
             try {
+                Registry registry = LocateRegistry.getRegistry(srv[0], Integer.parseInt(srv[1]));
+                BattleshipFactoryRI f = (BattleshipFactoryRI) registry.lookup(SERVICE_NAME);
                 int carga = f.getSessionCount();
-                System.out.println("  Nó " + srv[0] + ":" + srv[1]
-                        + " disponível (" + carga + " sessões ativas)");
-                if (carga < menorCarga) {
-                    menorCarga = carga;
-                    melhor = f;
-                }
-            } catch (RemoteException e) {
-                System.out.println("  Nó " + srv[0] + ":" + srv[1] + " não respondeu.");
+                System.out.println("  Nó " + srv[0] + ":" + srv[1] + " disponível (" + carga + " sessões)");
+                servidores.add(f);
+                cargas.add(carga);
+            } catch (RemoteException | NotBoundException e) {
+                System.out.println("  Nó " + srv[0] + ":" + srv[1] + " indisponível.");
             }
         }
 
-        if (melhor != null) System.out.println("Ligado ao nó menos carregado.\n");
-        return melhor;
+        if (servidores.isEmpty()) return null;
+        int indiceMelhor = cargas.indexOf(Collections.min(cargas));
+        return servidores.get(indiceMelhor);
     }
 
-    private static BattleshipFactory tentarLigar(String host, String port) {
-        try {
-            Registry registry = LocateRegistry.getRegistry(host, Integer.parseInt(port));
-            BattleshipFactory f = (BattleshipFactory) registry.lookup(SERVICE_NAME);
-            f.getSessionCount(); // confirma que está vivo
-            return f;
-        } catch (Exception e) {
-            System.out.println("  Nó " + host + ":" + port + " indisponível.");
-            return null;
-        }
-    }
 
     // -------------------------------------------------------------------------
     // Autenticação
     // -------------------------------------------------------------------------
 
-    private static LobbySession autenticar(Scanner scanner, BattleshipFactory factory,
-                                            String[] credenciais) {
+    private static LobbySessionRI autenticar(Scanner scanner, BattleshipFactoryRI factory,String[] credenciais) {
         while (true) {
             System.out.println("--- Autenticação ---");
             System.out.println("1. Registar");
@@ -119,7 +114,7 @@ public class ClientApp {
                     System.out.print("Password: ");
                     String password = scanner.nextLine().trim();
                     try {
-                        LobbySession session = factory.register(username, password);
+                        LobbySessionRI session = factory.register(username, password);
                         credenciais[0] = username;
                         credenciais[1] = password;
                         System.out.println("Registo e login efetuados! Bem-vindo, " + username + "!");
@@ -135,7 +130,7 @@ public class ClientApp {
                     System.out.print("Password: ");
                     String password = scanner.nextLine().trim();
                     try {
-                        LobbySession session = factory.login(username, password);
+                        LobbySessionRI session = factory.login(username, password);
                         credenciais[0] = username;
                         credenciais[1] = password;
                         System.out.println("Login efetuado! Bem-vindo, " + username + "!");
@@ -145,13 +140,15 @@ public class ClientApp {
                         System.out.println("Erro no login: " + e.getMessage() + "\n");
                     }
                 }
-                case "0" -> { return null; }
+                case "0" -> {
+                   return null; 
+                }
                 default  -> System.out.println("Opção inválida.\n");
             }
         }
     }
 
-    private static void printToken(LobbySession session) throws RemoteException {
+    private static void printToken(LobbySessionRI session) throws RemoteException {
         String token = session.getToken();
         String preview = token.substring(0, Math.min(token.length(), 30)) + "...";
         System.out.println("[JWT] Token de sessão: " + preview + "\n");
@@ -161,10 +158,10 @@ public class ClientApp {
     // Lobby — com failover automático de sessão (R5)
     // -------------------------------------------------------------------------
 
-    private static void menuLobby(Scanner scanner, LobbySession session, String[] credenciais) {
+    private static void menuLobby(Scanner scanner, LobbySessionRI session, String token, String[] credenciais) {
         try {
             while (true) {
-                System.out.println("--- Lobby (" + session.getUsername() + ") ---");
+                System.out.println("--- Lobby (" + session.getUsername(token) + ") ---");
                 System.out.println("1. Listar jogos disponíveis");
                 System.out.println("2. Criar novo jogo (e entrar)");
                 System.out.println("3. Entrar num jogo existente");
@@ -173,11 +170,11 @@ public class ClientApp {
                 String opcao = scanner.nextLine().trim();
 
                 switch (opcao) {
-                    case "1" -> listarJogos(session);
-                    case "2" -> criarEEntrarJogo(scanner, session);
-                    case "3" -> entrarJogo(scanner, session);
+                    case "1" -> listarJogos(session, token);
+                    case "2" -> criarEEntrarJogo(scanner, session, token);
+                    case "3" -> entrarJogo(scanner, session, token);
                     case "0" -> {
-                        try { session.logout(); } catch (RemoteException ignored) {}
+                        try { session.logout(token); } catch (RemoteException ignored) {}
                         System.out.println("Sessão terminada. Até logo!\n");
                         return;
                     }
@@ -189,23 +186,28 @@ public class ClientApp {
             System.out.println("\n[R5] Servidor indisponível: " + e.getMessage());
             System.out.println("[R5] A procurar servidor de backup...");
 
-            BattleshipFactory backup = ligarAoMelhorNo(new String[0]);
+            BattleshipFactoryRI backup = ligarAoMelhorNo(new String[0]);
             if (backup == null) {
                 System.err.println("[R5] Nenhum servidor disponível. A terminar.");
                 return;
             }
             try {
-                LobbySession novaSession = backup.login(credenciais[0], credenciais[1]);
+                LobbySessionRI novaSession = backup.login(credenciais[0], credenciais[1]);
+                String novoToken = novaSession.getToken();
                 System.out.println("[R5] Reconectado! Sessão restaurada para '" + credenciais[0] + "'.\n");
-                menuLobby(scanner, novaSession, credenciais); // continua no backup
+                menuLobby(scanner, novaSession, novoToken, credenciais);
             } catch (RemoteException ex) {
                 System.err.println("[R5] Falha na reconexão: " + ex.getMessage());
             }
         }
     }
 
-    private static void listarJogos(LobbySession session) throws RemoteException {
-        List<GameInfo> jogos = session.listGames();
+    // -------------------------------------------------------------------------
+    // Criar jogo e entrar imediatamente
+    // -------------------------------------------------------------------------
+
+    private static void listarJogos(LobbySessionRI session, String token) throws RemoteException {
+        List<GameInfo> jogos = session.listGames(token);
         if (jogos.isEmpty()) {
             System.out.println("Não há jogos disponíveis.\n");
         } else {
@@ -219,10 +221,9 @@ public class ClientApp {
     // Criar jogo e entrar imediatamente
     // -------------------------------------------------------------------------
 
-    private static void criarEEntrarJogo(Scanner scanner, LobbySession session)
-            throws RemoteException {
+    private static void criarEEntrarJogo(Scanner scanner, LobbySessionRI session, String token) throws RemoteException {
         String mode = perguntarModo(scanner);
-        BattleshipGameSubject jogo = session.createGame(mode);
+        BattleshipGameSubjectRI jogo = session.createGame(token, mode);
         if (jogo == null) {
             System.out.println("Erro ao criar o jogo.\n");
             return;
@@ -230,22 +231,21 @@ public class ClientApp {
         String gameId = jogo.getGameId();
         System.out.println("Jogo criado: " + gameId + "  [modo: " + mode + "]");
         System.out.println("Aguarda que o adversário entre...\n");
-        abrirJanelaJogo(jogo, gameId, session.getUsername(), "PUBSUB".equals(mode));
+        abrirJanelaJogo(jogo, gameId, session.getUsername(token), token, "PUBSUB".equals(mode));
     }
 
     // -------------------------------------------------------------------------
     // Entrar num jogo existente
     // -------------------------------------------------------------------------
 
-    private static void entrarJogo(Scanner scanner, LobbySession session)
-            throws RemoteException {
-        listarJogos(session);
+    private static void entrarJogo(Scanner scanner, LobbySessionRI session, String token) throws RemoteException {
+        listarJogos(session, token);
         System.out.print("ID do jogo: ");
         String gameId = scanner.nextLine().trim();
 
-        BattleshipGameSubject jogo;
+        BattleshipGameSubjectRI jogo;
         try {
-            jogo = session.getProxy(gameId);
+            jogo = session.getProxy(token, gameId);
         } catch (RemoteException e) {
             System.out.println("Erro: " + e.getMessage() + "\n");
             return;
@@ -253,7 +253,7 @@ public class ClientApp {
 
         String mode = jogo.getGameMode();
         System.out.println("Este jogo usa modo: " + mode + ". A entrar...\n");
-        abrirJanelaJogo(jogo, gameId, session.getUsername(), "PUBSUB".equals(mode));
+        abrirJanelaJogo(jogo, gameId, session.getUsername(token), token, "PUBSUB".equals(mode));
     }
 
     // -------------------------------------------------------------------------
@@ -268,10 +268,9 @@ public class ClientApp {
         return "2".equals(scanner.nextLine().trim()) ? "PUBSUB" : "RMI";
     }
 
-    private static void abrirJanelaJogo(BattleshipGameSubject jogo, String gameId,
-                                         String username, boolean usePubSub) {
+    private static void abrirJanelaJogo(BattleshipGameSubjectRI jogo, String gameId, String username, String token, boolean usePubSub) {
         CountDownLatch latch = new CountDownLatch(1);
-        GameUI gameUI = new GameUI(jogo, gameId, username, usePubSub);
+        GameUI gameUI = new GameUI(jogo, gameId, username, token, usePubSub);
         gameUI.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosed(java.awt.event.WindowEvent e) { latch.countDown(); }

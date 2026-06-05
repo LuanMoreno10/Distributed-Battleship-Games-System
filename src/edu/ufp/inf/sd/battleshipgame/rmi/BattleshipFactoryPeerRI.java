@@ -7,7 +7,7 @@ import java.rmi.RemoteException;
  * Interface RMI de sincronização entre nós servidores (R5).
  * Cada nó expõe este interface para que o seu par possa replicar dados de utilizadores.
  */
-public interface BattleshipFactoryPeer extends Remote {
+public interface BattleshipFactoryPeerRI extends Remote {
 
     /** Replica um registo de utilizador. Idempotente: ignorado se o utilizador já existir. */
     void syncRegister(String username, String password) throws RemoteException;
@@ -23,6 +23,6 @@ public interface BattleshipFactoryPeer extends Remote {
      * e envia todos os utilizadores que já tem para sincronização inicial.
      * Permite que o Nó B se ligue ao Nó A depois deste já estar a correr.
      */
-    void registerAsPeer(BattleshipFactoryPeer caller, java.util.Map<String, String> existingUsers)
+    void registerAsPeer(BattleshipFactoryPeerRI caller, java.util.Map<String, String> existingUsers)
             throws RemoteException;
 }

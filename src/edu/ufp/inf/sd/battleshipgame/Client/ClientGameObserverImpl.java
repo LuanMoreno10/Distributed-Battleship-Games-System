@@ -1,16 +1,16 @@
 package edu.ufp.inf.sd.battleshipgame.Client;
 
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameObserver;
-import edu.ufp.inf.sd.battleshipgame.rmi.GameState;
-
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.List;
 
+import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameObserverRI;
+import edu.ufp.inf.sd.battleshipgame.rmi.GameState;
+
 /**
  * Observer RMI (callback) usado pelo cliente para receber updates síncronos do servidor.
  */
-public class ClientGameObserverImpl extends UnicastRemoteObject implements BattleshipGameObserver {
+public class ClientGameObserverImpl extends UnicastRemoteObject implements BattleshipGameObserverRI {
 
     private volatile GameState lastState;
 

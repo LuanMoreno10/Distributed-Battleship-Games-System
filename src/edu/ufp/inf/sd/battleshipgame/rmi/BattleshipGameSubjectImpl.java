@@ -1,7 +1,5 @@
 package edu.ufp.inf.sd.battleshipgame.rmi;
 
-import edu.ufp.inf.sd.battleshipgame.pubsub.BattleshipGamePublisher;
-
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
@@ -9,10 +7,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements BattleshipGameSubject {
+import edu.ufp.inf.sd.battleshipgame.pubsub.BattleshipGamePublisher;
+
+public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements BattleshipGameSubjectRI
+ {
     private final String gameId;
     private final String gameMode; // "RMI" ou "PUBSUB"
-    private final Map<String, BattleshipGameObserver> observersByUser;
+    private final Map<String, BattleshipGameObserverRI> observersByUser;
 
     private transient BattleshipGamePublisher publisher;
 
@@ -37,8 +38,15 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
         }
     }
 
+    private void validateToken(String token) throws RemoteException {
+        if (!JwtUtils.isTokenValid(token)) {
+            throw new RemoteException("Token inválido ou expirado.");
+        }
+    }
+
     @Override
-    public synchronized void attach(String username, BattleshipGameObserver observer) throws RemoteException {
+    public synchronized void attach(String token, String username, BattleshipGameObserverRI observer) throws RemoteException {
+        validateToken(token);
         if (username == null || username.isBlank()) {
             throw new RemoteException("Username inválido.");
         }
@@ -73,11 +81,12 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
     }
 
     @Override
-    public synchronized void detach(String username) throws RemoteException {
+    public synchronized void detach(String token, String username) throws RemoteException {
+        validateToken(token);
         if (username == null || username.isBlank()) {
             throw new RemoteException("Username inválido.");
         }
-        BattleshipGameObserver removed = observersByUser.remove(username);
+        BattleshipGameObserverRI removed = observersByUser.remove(username);
         gameState.getPlayers().remove(username);
         gameState.getPlayerStates().remove(username);
 
@@ -108,7 +117,8 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
     }
 
     @Override
-    public synchronized void setState(GameAction action) throws RemoteException {
+    public synchronized void setState(String token, GameAction action) throws RemoteException {
+        validateToken(token);
         if (action == null) {
             throw new RemoteException("Action não pode ser null.");
         }
@@ -139,7 +149,8 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
     }
 
     @Override
-    public synchronized GameState getState() throws RemoteException {
+    public synchronized GameState getState(String token) throws RemoteException {
+        validateToken(token);
         return gameState;
     }
 
@@ -258,8 +269,8 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
 
     private void notifyObserversSafe() {
         List<String> toRemove = new ArrayList<>();
-        for (Map.Entry<String, BattleshipGameObserver> entry : observersByUser.entrySet()) {
-            BattleshipGameObserver observer = entry.getValue();
+        for (Map.Entry<String, BattleshipGameObserverRI> entry : observersByUser.entrySet()) {
+            BattleshipGameObserverRI observer = entry.getValue();
             try {
                 observer.update(gameState);
             } catch (RemoteException e) {
