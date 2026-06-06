@@ -42,7 +42,6 @@ public class GameUI extends JFrame {
     private final String token;
     private final boolean usePubSub;
 
-    // Boards reutilizados da implementação original
     private final Board myBoard;      // campo próprio (navios + tiros recebidos)
     private final Board enemyBoard;   // campo adversário (onde disparamos)
 
@@ -73,7 +72,7 @@ public class GameUI extends JFrame {
         this.txaLog = new JTextArea(6, 40);
 
         buildUI();
-        hookButtonActions();
+        initButtonListeners();
 
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
@@ -85,6 +84,7 @@ public class GameUI extends JFrame {
         });
 
         attachToGame();
+        setVisible(true);
     }
 
     // -------------------------------------------------------------------------
@@ -158,8 +158,6 @@ public class GameUI extends JFrame {
         scroll.getViewport().setBackground(Color.BLACK);
         scroll.setBorder(BorderFactory.createLineBorder(Color.GREEN));
         add(scroll);
-
-        setVisible(true);
     }
 
     private void buildLegend(int x, int y) {
@@ -190,19 +188,14 @@ public class GameUI extends JFrame {
     // Listeners dos botões
     // -------------------------------------------------------------------------
 
-    private void hookButtonActions() {
-        // Substitui os listeners originais dos boards pelos nossos
+    private void initButtonListeners() {
         for (int r = 0; r < 10; r++) {
             for (int c = 0; c < 10; c++) {
                 final int row = r, col = c;
 
-                for (java.awt.event.ActionListener al : myBoard.btnGrid[r][c].getActionListeners())
-                    myBoard.btnGrid[r][c].removeActionListener(al);
                 myBoard.btnGrid[r][c].addActionListener(e -> onMyBoardClick(row, col));
                 myBoard.btnGrid[r][c].setEnabled(false);
 
-                for (java.awt.event.ActionListener al : enemyBoard.btnGrid[r][c].getActionListeners())
-                    enemyBoard.btnGrid[r][c].removeActionListener(al);
                 enemyBoard.btnGrid[r][c].addActionListener(e -> onEnemyBoardClick(row, col));
                 enemyBoard.btnGrid[r][c].setEnabled(false);
             }
@@ -243,7 +236,6 @@ public class GameUI extends JFrame {
                 if (rabbitOk) {
                     // RabbitMQ ok — usa NullObserver (updates chegam pelo consumer)
                     game.attach(token, username, new NullObserver());
-                    setTitle(getTitle().replace("[PubSub/RabbitMQ]", "[PubSub/RabbitMQ]"));
                 } else {
                     // RabbitMQ falhou — fallback automático para Observer/RMI
                     System.out.println("[GameUI] Fallback para Observer/RMI.");
