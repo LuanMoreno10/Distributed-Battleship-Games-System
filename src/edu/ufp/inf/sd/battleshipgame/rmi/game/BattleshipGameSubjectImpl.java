@@ -1,7 +1,5 @@
 package edu.ufp.inf.sd.battleshipgame.rmi.game;
 
-import edu.ufp.inf.sd.battleshipgame.model.*;
-
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
@@ -9,6 +7,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import edu.ufp.inf.sd.battleshipgame.model.GameAction;
+import edu.ufp.inf.sd.battleshipgame.model.GamePhase;
+import edu.ufp.inf.sd.battleshipgame.model.GameState;
+import edu.ufp.inf.sd.battleshipgame.model.PlayerState;
 import edu.ufp.inf.sd.battleshipgame.pubsub.BattleshipGamePublisher;
 import edu.ufp.inf.sd.battleshipgame.pubsub.GameActionConsumer;
 import edu.ufp.inf.sd.battleshipgame.rmi.lobby.JwtUtils;
@@ -64,32 +66,34 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
         if (observer == null) {
             throw new RemoteException("Observer não pode ser null.");
         }
-        if (observersByUser.containsKey(username)) {
+        if (gameState.getPhase() == GamePhase.FINISHED) {
+            throw new RemoteException("Este jogo já terminou.");
+        }
+        if (gameState.getPlayers().contains(username)) {
             throw new RemoteException("O utilizador '" + username + "' já está ligado a este jogo.");
         }
-        if (observersByUser.size() >= 2) {
+        if (gameState.getPlayers().size() >= 2) {
             throw new RemoteException("Game is already full (max 2 players).");
         }
-
+    
         observersByUser.put(username, observer);
         gameState.getPlayers().add(username);
         gameState.getPlayerStates().put(username, new PlayerState());
-
-        gameState.touch();
+    
         gameState.addEvent("'" + username + "' joined the game.");
         System.out.println("[Servidor] '" + username + "' attached to game " + gameId);
-
-        if (observersByUser.size() == 1) {
+    
+        if (gameState.getPlayers().size() == 1) {
             gameState.setPhase(GamePhase.WAITING_FOR_PLAYERS);
             gameState.setCurrentTurn(username);
-        } else if (observersByUser.size() == 2) {
-            // Com 2 jogadores começamos fase de posicionamento de navios.
+        } else if (gameState.getPlayers().size() == 2) {
             gameState.setPhase(GamePhase.PLACING_SHIPS);
-            // mantém currentTurn no primeiro jogador que entrou
         }
-
+    
+        gameState.touch();
         propagateState();
     }
+    
 
     @Override
     public synchronized void detach(String token, String username) throws RemoteException {
@@ -97,35 +101,37 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
         if (username == null || username.isBlank()) {
             throw new RemoteException("Username inválido.");
         }
-        BattleshipGameObserverRI removed = observersByUser.remove(username);
+        if (!gameState.getPlayers().contains(username)) {
+            return; // jogador não está neste jogo, nada a fazer
+        }
+    
+        observersByUser.remove(username);
         gameState.getPlayers().remove(username);
         gameState.getPlayerStates().remove(username);
-
-        gameState.touch();
-        if (removed != null) {
-            gameState.addEvent("'" + username + "' left the game.");
-            System.out.println("[Servidor] '" + username + "' detached from game " + gameId);
-
-            // Se o jogo já estava em progresso, o outro jogador ganha.
-            if (gameState.getPhase() == GamePhase.IN_PROGRESS || gameState.getPhase() == GamePhase.PLACING_SHIPS) {
-                gameState.setPhase(GamePhase.FINISHED);
-                String winner = observersByUser.keySet().stream().findFirst().orElse(null);
-                gameState.setWinner(winner);
-                if (winner != null) {
-                    gameState.addEvent("Game finished (opponent disconnected). Winner: " + winner);
-                } else {
-                    gameState.addEvent("Game finished (all players left). ");
-                }
-            } else if (observersByUser.isEmpty()) {
-                gameState.setPhase(GamePhase.FINISHED);
+    
+        gameState.addEvent("'" + username + "' left the game.");
+        System.out.println("[Servidor] '" + username + "' detached from game " + gameId);
+    
+        if (gameState.getPhase() == GamePhase.IN_PROGRESS || gameState.getPhase() == GamePhase.PLACING_SHIPS) {
+            gameState.setPhase(GamePhase.FINISHED);
+            String winner = gameState.getPlayers().stream().findFirst().orElse(null);
+            gameState.setWinner(winner);
+            if (winner != null) {
+                gameState.addEvent("Game finished (opponent disconnected). Winner: " + winner);
             } else {
-                gameState.setPhase(GamePhase.WAITING_FOR_PLAYERS);
-                gameState.setCurrentTurn(observersByUser.keySet().iterator().next());
+                gameState.addEvent("Game finished (all players left).");
             }
+        } else if (gameState.getPlayers().isEmpty()) {
+            gameState.setPhase(GamePhase.FINISHED);
+        } else {
+            gameState.setPhase(GamePhase.WAITING_FOR_PLAYERS);
+            gameState.setCurrentTurn(gameState.getPlayers().get(0));
         }
-
+    
+        gameState.touch();
         propagateState();
     }
+
 
     @Override
     public synchronized void setState(String token, GameAction action) throws RemoteException {
@@ -134,7 +140,7 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
             throw new RemoteException("Action não pode ser null.");
         }
         String username = action.getUsername();
-        if (!observersByUser.containsKey(username)) {
+        if (!gameState.getPlayers().contains(username)) {
             throw new RemoteException("Jogador '" + username + "' não está associado a este jogo.");
         }
         if (gameState.getPhase() == GamePhase.WAITING_FOR_PLAYERS) {
@@ -261,8 +267,11 @@ public class BattleshipGameSubjectImpl extends UnicastRemoteObject implements Ba
     }
 
     private void propagateState() {
-        notifyObserversSafe();
-        publishSafe();
+        if ("PUBSUB".equals(gameMode)) {
+            publishSafe();
+        } else {
+            notifyObserversSafe();
+        }
         maybeClosePublisher();
     }
 

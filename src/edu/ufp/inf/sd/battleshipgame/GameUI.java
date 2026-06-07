@@ -284,7 +284,8 @@ public class GameUI extends JFrame {
         // Ativar/desativar botões
         updateButtonStates(phase, myState, oppState, myTurn);
 
-        // Atualizar log
+        // Atualizar log só para o que o proprio cliente fez
+        
         refreshLog(state.getEventLog());
 
         // Diálogo de fim de jogo
@@ -385,11 +386,16 @@ public class GameUI extends JFrame {
         int from = Math.max(0, log.size() - 8);
         StringBuilder sb = new StringBuilder();
         for (int i = from; i < log.size(); i++) {
-            sb.append(log.get(i)).append("\n");
+            String event = log.get(i);
+            if (event.contains(" placed ") && !event.contains(username + " placed ")) {
+                continue;
+            }
+            sb.append(event).append("\n");
         }
         txaLog.setText(sb.toString());
         txaLog.setCaretPosition(txaLog.getDocument().getLength());
     }
+    
 
     // -------------------------------------------------------------------------
     // Pedidos de ação - por ships e tiros
