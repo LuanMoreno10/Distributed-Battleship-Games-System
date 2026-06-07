@@ -4,8 +4,8 @@ import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.List;
 
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameObserverRI;
-import edu.ufp.inf.sd.battleshipgame.rmi.GameState;
+import edu.ufp.inf.sd.battleshipgame.rmi.game.BattleshipGameObserverRI;
+import edu.ufp.inf.sd.battleshipgame.model.GameState;
 
 /**
  * Observer RMI (callback) usado pelo cliente para receber updates síncronos do servidor.

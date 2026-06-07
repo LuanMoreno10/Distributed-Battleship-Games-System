@@ -5,7 +5,7 @@ import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 import com.rabbitmq.client.MessageProperties;
-import edu.ufp.inf.sd.battleshipgame.rmi.GameState;
+import edu.ufp.inf.sd.battleshipgame.model.GameState;
 
 import java.io.Closeable;
 

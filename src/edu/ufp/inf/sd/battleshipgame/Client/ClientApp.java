@@ -11,10 +11,10 @@ import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
 
 import edu.ufp.inf.sd.battleshipgame.GameUI;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactoryRI;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameSubjectRI;
-import edu.ufp.inf.sd.battleshipgame.rmi.GameInfo;
-import edu.ufp.inf.sd.battleshipgame.rmi.LobbySessionRI;
+import edu.ufp.inf.sd.battleshipgame.rmi.lobby.BattleshipFactoryRI;
+import edu.ufp.inf.sd.battleshipgame.rmi.game.BattleshipGameSubjectRI;
+import edu.ufp.inf.sd.battleshipgame.model.GameInfo;
+import edu.ufp.inf.sd.battleshipgame.rmi.lobby.LobbySessionRI;
 
 public class ClientApp {
 

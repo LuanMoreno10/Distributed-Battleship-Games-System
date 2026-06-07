@@ -1,7 +1,7 @@
 package edu.ufp.inf.sd.battleshipgame.pubsub;
 
 import com.rabbitmq.client.*;
-import edu.ufp.inf.sd.battleshipgame.rmi.GameState;
+import edu.ufp.inf.sd.battleshipgame.model.GameState;
 
 import java.io.Closeable;
 import java.nio.charset.StandardCharsets;

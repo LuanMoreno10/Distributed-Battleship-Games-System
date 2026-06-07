@@ -2,8 +2,6 @@ package edu.ufp.inf.sd.battleshipgame;
 
 import java.awt.Color;
 import java.awt.Font;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.List;
@@ -18,17 +16,19 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 
+import edu.ufp.inf.sd.battleshipgame.model.Coordinate;
+import edu.ufp.inf.sd.battleshipgame.model.GameAction;
+import edu.ufp.inf.sd.battleshipgame.model.GameCommand;
+import edu.ufp.inf.sd.battleshipgame.model.GamePhase;
+import edu.ufp.inf.sd.battleshipgame.model.GameState;
+import edu.ufp.inf.sd.battleshipgame.model.Orientation;
+import edu.ufp.inf.sd.battleshipgame.model.PlayerState;
+import edu.ufp.inf.sd.battleshipgame.model.ShipPlacement;
+import edu.ufp.inf.sd.battleshipgame.model.Shot;
 import edu.ufp.inf.sd.battleshipgame.pubsub.BattleshipGameConsumer;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameObserverRI;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipGameSubjectRI;
-import edu.ufp.inf.sd.battleshipgame.rmi.Coordinate;
-import edu.ufp.inf.sd.battleshipgame.rmi.GameAction;
-import edu.ufp.inf.sd.battleshipgame.rmi.GamePhase;
-import edu.ufp.inf.sd.battleshipgame.rmi.GameState;
-import edu.ufp.inf.sd.battleshipgame.rmi.Orientation;
-import edu.ufp.inf.sd.battleshipgame.rmi.PlayerState;
-import edu.ufp.inf.sd.battleshipgame.rmi.ShipPlacement;
-import edu.ufp.inf.sd.battleshipgame.rmi.Shot;
+import edu.ufp.inf.sd.battleshipgame.pubsub.GameActionPublisher;
+import edu.ufp.inf.sd.battleshipgame.rmi.game.BattleshipGameObserverRI;
+import edu.ufp.inf.sd.battleshipgame.rmi.game.BattleshipGameSubjectRI;
 
 /**
  * Interface gráfica do jogo. Abre depois do login/lobby no terminal.
@@ -36,10 +36,10 @@ import edu.ufp.inf.sd.battleshipgame.rmi.Shot;
  */
 public class GameUI extends JFrame {
 
-    private final BattleshipGameSubjectRI game;
+    final BattleshipGameSubjectRI game;
     private final String gameId;
-    private final String username;
-    private final String token;
+    final String username;
+    final String token;
     private final boolean usePubSub;
 
     private final Board myBoard;      // campo próprio (navios + tiros recebidos)
@@ -53,7 +53,8 @@ public class GameUI extends JFrame {
 
     private boolean isVertical = false;
     private volatile GameState lastState;
-    private BattleshipGameConsumer consumer;
+    BattleshipGameConsumer consumer;
+    GameActionPublisher actionPublisher;
 
     public GameUI(BattleshipGameSubjectRI game, String gameId, String username, String token, boolean usePubSub) {
         super("Battleship  —  " + username + "  [" + (usePubSub ? "PubSub/RabbitMQ" : "Observer/RMI") + "]");
@@ -75,17 +76,13 @@ public class GameUI extends JFrame {
         initButtonListeners();
 
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                leaveGame();
-                dispose();
-            }
-        });
+        addWindowListener(new GameWindowListener(this));
 
         attachToGame();
         setVisible(true);
     }
+
+
 
     // -------------------------------------------------------------------------
     // Construção da interface
@@ -124,7 +121,7 @@ public class GameUI extends JFrame {
         // Legenda de cores
         buildLegend(10, 444);
 
-        // Informação do próximo navio
+        // Informação do próximo navio (quando estamos a colocar navios)
         lblShipInfo.setBounds(10, 464, 600, 22);
         lblShipInfo.setForeground(Color.YELLOW);
         lblShipInfo.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
@@ -185,7 +182,7 @@ public class GameUI extends JFrame {
     }
 
     // -------------------------------------------------------------------------
-    // Listeners dos botões
+    // Montagem das Armadilhas
     // -------------------------------------------------------------------------
 
     private void initButtonListeners() {
@@ -227,8 +224,9 @@ public class GameUI extends JFrame {
                 try {
                     consumer = new BattleshipGameConsumer(gameId, username);
                     consumer.start(state -> SwingUtilities.invokeLater(() -> onStateUpdate(state)));
+                    actionPublisher = new GameActionPublisher(gameId);
                     rabbitOk = true;
-                    System.out.println("[GameUI] RabbitMQ consumer ativo para " + gameId);
+                    System.out.println("[GameUI] RabbitMQ consumer+publisher ativos para " + gameId);
                 } catch (Exception ex) {
                     System.err.println("[GameUI] RabbitMQ indisponível: " + ex.getMessage());
                 }
@@ -260,7 +258,7 @@ public class GameUI extends JFrame {
     }
 
     // -------------------------------------------------------------------------
-    // Atualização de estado (chamado no EDT)
+    // Atualização da GUI 
     // -------------------------------------------------------------------------
 
     public void onStateUpdate(GameState state) {
@@ -394,44 +392,38 @@ public class GameUI extends JFrame {
     }
 
     // -------------------------------------------------------------------------
-    // Cliques nos boards
+    // Pedidos de ação - por ships e tiros
     // -------------------------------------------------------------------------
 
     private void onMyBoardClick(int row, int col) {
-        if (lastState == null || lastState.getPhase() != GamePhase.PLACING_SHIPS) return;
-        if (!username.equals(lastState.getCurrentTurn())) return;
-
+        if (lastState == null) return;
         PlayerState myState = lastState.getPlayerStates().get(username);
-        if (myState == null || myState.allShipsPlaced()) return;
-
-        int len = myState.nextShipLength();
         Orientation orientation = isVertical ? Orientation.VERTICAL : Orientation.HORIZONTAL;
-        ShipPlacement placement = new ShipPlacement(new Coordinate(row, col), len, orientation);
-        try {
-            game.setState(token, GameAction.placeShip(username, placement));
-        } catch (RemoteException ex) {
-            showError("Não foi possível colocar navio:\n" + ex.getMessage());
-        }
+        ShipPlacement placement = new ShipPlacement(new Coordinate(row, col), myState.nextShipLength(), orientation);
+        sendAction(GameAction.placeShip(username, placement));
     }
 
     private void onEnemyBoardClick(int row, int col) {
-        if (lastState == null || lastState.getPhase() != GamePhase.IN_PROGRESS) return;
-        if (!username.equals(lastState.getCurrentTurn())) return;
+        sendAction(GameAction.fire(username, new Shot(new Coordinate(row, col))));
+    }
+
+    private void sendAction(GameAction action) {
         try {
-            game.setState(token, GameAction.fire(username, new Shot(new Coordinate(row, col))));
-        } catch (RemoteException ex) {
-            showError("Não foi possível disparar:\n" + ex.getMessage());
+            if (actionPublisher != null) {
+                actionPublisher.publish(new GameCommand(token, action));
+            } else {
+                game.setState(token, action);
+            }
+        } catch (Exception ex) {
+            showError("Erro ao enviar ação:\n" + ex.getMessage());
         }
     }
+
 
     // -------------------------------------------------------------------------
     // Auxiliares
     // -------------------------------------------------------------------------
 
-    private void leaveGame() {
-        try { game.detach(token, username); } catch (Exception ignored) {}
-        if (consumer != null) { try { consumer.close(); } catch (Exception ignored) {} }
-    }
 
     private String getOpponent(GameState state) {
         for (String p : state.getPlayers()) {

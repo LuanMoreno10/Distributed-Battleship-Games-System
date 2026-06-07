@@ -6,8 +6,8 @@ import java.rmi.registry.Registry;
 import java.rmi.server.ExportException;
 import java.util.concurrent.CountDownLatch;
 
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactoryImpl;
-import edu.ufp.inf.sd.battleshipgame.rmi.BattleshipFactoryPeerRI;
+import edu.ufp.inf.sd.battleshipgame.rmi.lobby.BattleshipFactoryImpl;
+import edu.ufp.inf.sd.battleshipgame.rmi.lobby.BattleshipFactoryPeerRI;
 
 /**
  * Ponto de entrada do servidor.
